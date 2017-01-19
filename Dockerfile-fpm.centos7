@@ -1,0 +1,15 @@
+FROM centos:7
+MAINTAINER jenkins@toaster.eu
+#
+# setup fpm
+#
+RUN yum clean all
+RUN yum install wget which -y
+RUN \
+	yum install gcc gcc-c++ make -y && \
+	yum install libffi-devel ruby-devel rubygems -y && \
+	yum install rpm-build -y 
+RUN gem install fpm
+#
+CMD ["/bin/bash"]
+

@@ -1,0 +1,54 @@
+#!/bin/bash
+
+if ! grep -q docker /proc/1/cgroup; then
+	echo "This script should be started in Docker container"
+	echo "Run 'make-hyperkube-rpm' instead"
+	exit 1
+fi
+
+VERSION='1.5.2'
+WGET_ARGS=""
+ARCH="amd64"
+ITERATION=3
+DOWNLOAD_CACHE=${DOWNLOAD_CACHE:-/tmp/download}
+WORK_CACHE=${WORK_CACHE:-/tmp/packaging}
+export KUBERNETES_SKIP_CONFIRM=yes
+PACKAGE_ITERATION=${PACKAGE_ITERATION:-0}
+
+set -e 
+set -x
+
+# download everything if needed (not for now)
+#wget https://github.com/kubernetes/kubernetes/releases/download/v${VERSION}/kubernetes.tar.gz -O ${DOWNLOAD_CACHE}/kubernetes.tar.gz --continue ${WGET_ARGS}
+
+mkdir -p ${WORK_CACHE} ${DOWNLOAD_CACHE}
+# run manual download? Not fornow
+#( cd ${WORK_CACHE}/cluster; ./get-kube.sh )
+
+wget ${DIST_URL} -O ${DOWNLOAD_CACHE}/k8s-server.tar.gz --continue
+
+#wget ${K8S_SERVER_DOWNLOAD_URL} -O /tmp/k8s-server.tar.gz --continue ${WGET_ARGS}
+
+if [ ! -f ${WORK_CACHE}/hyperkube ]; then
+	( cd ${WORK_CACHE}; tar xfvz ${DOWNLOAD_CACHE}/k8s-server.tar.gz '*/hyperkube' --strip=3 )
+fi
+
+( cd ${WORK_CACHE}; mkdir -p sbin/hyperkube ; cd sbin/hyperkube ;
+	for i in kubectl apiserver scheduler proxy kubelet controller-manager kube-dns; do
+		ln -svf /sbin/hyperkube $i;
+        done
+)
+( cd ${WORK_CACHE}; mkdir -p bin; cd bin;
+		ln -svf /sbin/hyperkube kubectl;
+)
+# package RPM
+( cd ${TARGET_DIR}; fpm -s dir -t rpm -a $ARCH -n k8s-hyperkube -v $VERSION --iteration ${ITERATION} --force \
+		${WORK_CACHE}/hyperkube=/sbin/hyperkube \
+                ${WORK_CACHE}/bin/kubectl=/bin/ \
+                ${WORK_CACHE}/sbin/hyperkube=/usr/lib 
+)
+( cd ${TARGET_DIR}; fpm -s dir -t deb -a $ARCH -n k8s-hyperkube -v $VERSION --iteration ${ITERATION} --force \
+		${WORK_CACHE}/hyperkube=/sbin/hyperkube \
+                ${WORK_CACHE}/bin/kubectl=/bin/ \
+                ${WORK_CACHE}/sbin/hyperkube=/usr/lib 
+)

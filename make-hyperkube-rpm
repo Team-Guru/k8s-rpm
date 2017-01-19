@@ -2,33 +2,28 @@
 
 set -e
 set -x
-
 VERSION='1.5.2'
-WGET_ARGS=""
-WGET_ARGS="--limit-rate=1024k"
-ARCH="amd64"
+PACKAGE_ITERATION=3
+IMAGE_NAME='centos-fpm'
+DOWNLOAD_CACHE='/tmp/k8s-rpm-download'
+WORK_CACHE='/tmp/k8s-rpm-work'
+DIST_URL="https://storage.googleapis.com/kubernetes-release/release/v${VERSION}/kubernetes-server-linux-amd64.tar.gz"
 
-mkdir -p packages
+mkdir -p ${DOWNLOAD_CACHE} ${WORK_CACHE}
 
-wget https://github.com/kubernetes/kubernetes/releases/download/v${VERSION}/kubernetes.tar.gz -O /tmp/kubernetes.tar.gz --continue ${WGET_ARGS}
+# Prepare fpm image
+docker build -t $IMAGE_NAME -f Dockerfile-fpm.centos7 .
 
-mkdir -p tmp
-if [ ! -f tmp/kubernetes/cluster/centos ]; then
-	( cd tmp; tar xfvz /tmp/kubernetes.tar.gz kubernetes/cluster/centos --strip=2 )
-fi
-. tmp/centos/config-build.sh
-
-wget ${K8S_SERVER_DOWNLOAD_URL} -O /tmp/k8s-server.tar.gz --continue ${WGET_ARGS}
-
-if [ ! -f tmp/hyperkube ]; then
-	( cd tmp; tar xfvz /tmp/k8s-server.tar.gz '*/hyperkube' --strip=3 )
-fi
-
-( cd tmp; mkdir -p sbin/hyperkube ; cd sbin/hyperkube ;
-	for i in kubectl apiserver scheduler proxy kubelet controller-manager kube-dns; do
-		ln -svf /sbin/hyperkube $i;
-        done
-)
-fpm -s dir -t rpm -a $ARCH -n k8s-hyperkube -v $VERSION --force \
-		tmp/hyperkube=/sbin/hyperkube \
-                tmp/sbin/hyperkube=/usr/lib \ 
+# Run packaging script in the container
+docker run -it --rm  \
+	-e TARGET_DIR=/packages \
+	-e DOWNLOAD_CACHE=${DOWNLOAD_CACHE} \
+	-e WORK_CACHE=${WORK_CACHE} \
+	-e DIST_URL=${DIST_URL} \
+	-e PACKAGE_ITERATION=${PACKAGE_ITERATION} \
+	-v ${DOWNLOAD_CACHE}:${DOWNLOAD_CACHE} \
+	-v ${WORK_CACHE}:${WORK_CACHE} \
+	-v $(pwd)/packages:/packages \
+	-v $(pwd)/do-packaging:/tmp/do-packaging \
+	--entrypoint /bin/bash \
+	${IMAGE_NAME} '/tmp/do-packaging'
